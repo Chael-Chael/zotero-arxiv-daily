@@ -38,18 +38,51 @@ def get_stars_text(score: float) -> str:
         return '⭐' * full_star_num + ('½' if half_star_num else '')
 
 
-def build_paper_table_row(paper: ArxivPaper, index: int) -> str:
-    """构建表格行文本"""
-    # 截断标题
-    title = paper.title[:30] + "..." if len(paper.title) > 30 else paper.title
-    # 获取发布日期
-    pub_date = paper._paper.published.strftime('%Y-%m-%d') if paper._paper.published else 'N/A'
+def build_paper_table(papers: list[ArxivPaper], start_index: int = 1) -> list[dict]:
+    """构建论文表格元素"""
+    if not papers:
+        return []
     
-    return f"| {index} | {title} | {paper.arxiv_id} | {pub_date} | [PDF]({paper.pdf_url}) |"
+    # 表格头
+    header = {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "background_style": "grey",
+        "columns": [
+            {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": "**序号**"}]},
+            {"tag": "column", "width": "weighted", "weight": 3, "elements": [{"tag": "markdown", "content": "**论文标题**"}]},
+            {"tag": "column", "width": "weighted", "weight": 1, "elements": [{"tag": "markdown", "content": "**arXiv ID**"}]},
+            {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": "**论文日期**"}]},
+            {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": "**链接**"}]},
+        ]
+    }
+    
+    rows = [header]
+    
+    for i, paper in enumerate(papers, start_index):
+        # 截断标题
+        title = paper.title[:35] + "..." if len(paper.title) > 35 else paper.title
+        # 获取发布日期
+        pub_date = paper._paper.published.strftime('%Y-%m-%d') if paper._paper.published else 'N/A'
+        
+        row = {
+            "tag": "column_set",
+            "flex_mode": "none",
+            "columns": [
+                {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": f"{i}"}]},
+                {"tag": "column", "width": "weighted", "weight": 3, "elements": [{"tag": "markdown", "content": title}]},
+                {"tag": "column", "width": "weighted", "weight": 1, "elements": [{"tag": "markdown", "content": paper.arxiv_id}]},
+                {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": pub_date}]},
+                {"tag": "column", "width": "auto", "elements": [{"tag": "markdown", "content": f"[PDF]({paper.pdf_url})"}]},
+            ]
+        }
+        rows.append(row)
+    
+    return rows
 
 
-def build_paper_detail(paper: ArxivPaper, index: int) -> str:
-    """构建论文详细信息 Markdown"""
+def build_paper_detail_element(paper: ArxivPaper, index: int) -> list[dict]:
+    """构建单篇论文详细信息元素"""
     # 处理作者
     author_list = [a.name for a in paper.authors]
     if len(author_list) <= 5:
@@ -57,77 +90,33 @@ def build_paper_detail(paper: ArxivPaper, index: int) -> str:
     else:
         authors = ', '.join(author_list[:3] + ['...'] + author_list[-2:])
     
-    # 处理机构
-    if paper.affiliations is not None:
-        affiliations = ', '.join(paper.affiliations[:3])
-        if len(paper.affiliations) > 3:
-            affiliations += ', ...'
-    else:
-        affiliations = ''
+    elements = [
+        {"tag": "hr"},
+        {"tag": "markdown", "content": f"**📝 {index}. {paper.title}**"},
+    ]
     
-    # 相关度
+    # 相关度星级
     stars = get_stars_text(paper.score) if paper.score else ''
+    if stars:
+        elements.append({"tag": "markdown", "content": f"⭐ 相关度: {stars}"})
     
-    # 链接
+    # arXiv ID 和链接
     links = f"[arXiv](https://arxiv.org/abs/{paper.arxiv_id}) | [PDF]({paper.pdf_url})"
     if paper.code_url:
         links += f" | [Code]({paper.code_url})"
+    elements.append({"tag": "markdown", "content": f"📎 arXiv ID: {paper.arxiv_id}"})
+    elements.append({"tag": "markdown", "content": f"🔗 论文链接: {links}"})
     
-    detail = f"**📝 {index}. {paper.title}**\n"
-    if stars:
-        detail += f"⭐ 相关度: {stars}\n"
-    detail += f"👤 {authors}\n"
-    if affiliations:
-        detail += f"🏛️ {affiliations}\n"
-    detail += f"🔗 {links}\n\n"
+    # 摘要标题
+    elements.append({"tag": "markdown", "content": "**摘要**"})
     
-    # 英文原文 + 中文翻译
-    detail += f"**Abstract (原文)**\n{paper.summary}\n\n"
-    detail += f"**摘要 (中文翻译)**\n{paper.tldr}\n"
+    # 英文原文
+    elements.append({"tag": "markdown", "content": paper.summary})
     
-    return detail
-
-
-def build_message_content(daily_papers: list[ArxivPaper], monthly_papers: list[ArxivPaper]) -> str:
-    """构建消息内容 Markdown"""
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
-    total = len(daily_papers) + len(monthly_papers)
+    # 中文翻译
+    elements.append({"tag": "markdown", "content": paper.tldr})
     
-    content = f"**ArXiv Today** 📚\n{today}\n\n"
-    content += f"今日找到了 **{total}** 篇相关论文\n\n"
-    
-    # 每日新论文表格
-    if daily_papers:
-        content += "---\n### 📅 今日最新\n\n"
-        content += "| 序号 | 论文标题 | arXiv ID | 日期 | 链接 |\n"
-        content += "|:---:|:---|:---|:---:|:---:|\n"
-        for i, paper in enumerate(daily_papers, 1):
-            content += build_paper_table_row(paper, i) + "\n"
-        content += "\n"
-    
-    # 月度论文表格
-    if monthly_papers:
-        content += "---\n### 📊 月度精选\n\n"
-        content += "| 序号 | 论文标题 | arXiv ID | 日期 | 链接 |\n"
-        content += "|:---:|:---|:---|:---:|:---:|\n"
-        for i, paper in enumerate(monthly_papers, 1):
-            content += build_paper_table_row(paper, i) + "\n"
-        content += "\n"
-    
-    return content
-
-
-def build_detail_content(papers: list[ArxivPaper], section_title: str) -> str:
-    """构建详细摘要内容"""
-    if not papers:
-        return ""
-    
-    content = f"---\n### {section_title}\n\n"
-    for i, paper in enumerate(tqdm(papers, desc=f'Building {section_title}'), 1):
-        content += build_paper_detail(paper, i) + "\n---\n"
-        time.sleep(5)  # 生成 TLDR 需要调用 LLM
-    
-    return content
+    return elements
 
 
 def send_feishu_message(
@@ -138,20 +127,14 @@ def send_feishu_message(
 ) -> bool:
     """
     发送消息到飞书群
-    
-    Args:
-        webhook_url: 飞书自定义机器人 webhook 地址
-        daily_papers: 每日新论文列表
-        monthly_papers: 月度论文列表
-        secret: 签名密钥（可选）
-    
-    Returns:
-        是否发送成功
     """
     if monthly_papers is None:
         monthly_papers = []
     
-    if len(daily_papers) == 0 and len(monthly_papers) == 0:
+    total = len(daily_papers) + len(monthly_papers)
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    if total == 0:
         # 空消息
         message = {
             "msg_type": "interactive",
@@ -159,6 +142,7 @@ def send_feishu_message(
                 "schema": "2.0",
                 "header": {
                     "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+                    "subtitle": {"tag": "plain_text", "content": today},
                     "template": "blue"
                 },
                 "body": {
@@ -169,14 +153,45 @@ def send_feishu_message(
             }
         }
     else:
-        # 构建表格概览
-        overview = build_message_content(daily_papers, monthly_papers)
+        elements = []
         
-        # 构建详细摘要
-        daily_details = build_detail_content(daily_papers, "📅 今日最新 - 详细摘要")
-        monthly_details = build_detail_content(monthly_papers, "📊 月度精选 - 详细摘要")
+        # 头部信息
+        elements.append({
+            "tag": "markdown", 
+            "content": f"ArXiv Today 小助手来啦٩(๑>◡<๑)۶！\n今日找到了 **{total}** 篇相关论文 ⁽⁽٩(๑˃̶͈̀ ᗨ ˂̶͈́)۶⁾⁾"
+        })
         
-        full_content = overview + daily_details + monthly_details
+        # 每日论文表格
+        if daily_papers:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "### 📅 今日最新"})
+            table_elements = build_paper_table(daily_papers, start_index=1)
+            elements.extend(table_elements)
+        
+        # 月度论文表格
+        if monthly_papers:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "### 📊 月度精选"})
+            table_elements = build_paper_table(monthly_papers, start_index=1)
+            elements.extend(table_elements)
+        
+        # 每日论文详情
+        if daily_papers:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "## 📅 今日最新 - 详细摘要"})
+            for i, paper in enumerate(tqdm(daily_papers, desc='Building daily details'), 1):
+                detail_elements = build_paper_detail_element(paper, i)
+                elements.extend(detail_elements)
+                time.sleep(5)
+        
+        # 月度论文详情
+        if monthly_papers:
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": "## 📊 月度精选 - 详细摘要"})
+            for i, paper in enumerate(tqdm(monthly_papers, desc='Building monthly details'), 1):
+                detail_elements = build_paper_detail_element(paper, i)
+                elements.extend(detail_elements)
+                time.sleep(5)
         
         message = {
             "msg_type": "interactive",
@@ -184,12 +199,11 @@ def send_feishu_message(
                 "schema": "2.0",
                 "header": {
                     "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+                    "subtitle": {"tag": "plain_text", "content": today},
                     "template": "blue"
                 },
                 "body": {
-                    "elements": [
-                        {"tag": "markdown", "content": full_content}
-                    ]
+                    "elements": elements
                 }
             }
         }
