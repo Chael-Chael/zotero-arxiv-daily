@@ -183,18 +183,16 @@ class ArxivPaper:
             if match:
                 conclusion = match.group(0)
         llm = get_llm()
-        prompt = """Given the title, abstract, introduction and the conclusion (if any) of a paper in latex format, generate a one-sentence TLDR summary in __LANG__:
-        
-        \\title{__TITLE__}
-        \\begin{abstract}__ABSTRACT__\\end{abstract}
-        __INTRODUCTION__
-        __CONCLUSION__
-        """
+        prompt = """请将以下论文的摘要翻译成__LANG__，保持完整性，不要过度简化或省略内容：
+
+论文标题：__TITLE__
+
+原文摘要：
+__ABSTRACT__
+"""
         prompt = prompt.replace('__LANG__', llm.lang)
         prompt = prompt.replace('__TITLE__', self.title)
         prompt = prompt.replace('__ABSTRACT__', self.summary)
-        prompt = prompt.replace('__INTRODUCTION__', introduction)
-        prompt = prompt.replace('__CONCLUSION__', conclusion)
 
         # use gpt-4o tokenizer for estimation
         enc = tiktoken.encoding_for_model("gpt-4o")
@@ -206,7 +204,7 @@ class ArxivPaper:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
+                    "content": "你是一位专业的学术论文翻译助手，擅长将英文论文摘要准确、完整地翻译成目标语言。请保持学术风格，不要省略任何重要信息。",
                 },
                 {"role": "user", "content": prompt},
             ]

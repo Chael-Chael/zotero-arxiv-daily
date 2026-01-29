@@ -38,5 +38,7 @@ jobs:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
           NOTIFY_METHOD: ${{ vars.NOTIFY_METHOD }}
+          DAILY_PAPER_NUM: ${{ vars.DAILY_PAPER_NUM }}
+          MONTHLY_PAPER_NUM: ${{ vars.MONTHLY_PAPER_NUM }}
         run: |
           uv run main.py

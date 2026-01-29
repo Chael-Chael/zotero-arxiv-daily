@@ -6,6 +6,7 @@ import base64
 import hmac
 import time
 import requests
+import datetime
 from typing import Optional
 from loguru import logger
 from paper import ArxivPaper
@@ -14,16 +15,7 @@ import math
 
 
 def gen_sign(timestamp: int, secret: str) -> str:
-    """
-    生成签名字符串用于飞书机器人安全校验
-    
-    Args:
-        timestamp: 时间戳（秒）
-        secret: 签名密钥
-    
-    Returns:
-        签名字符串
-    """
+    """生成签名字符串用于飞书机器人安全校验"""
     string_to_sign = '{}\n{}'.format(timestamp, secret)
     hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
     sign = base64.b64encode(hmac_code).decode('utf-8')
@@ -31,9 +23,7 @@ def gen_sign(timestamp: int, secret: str) -> str:
 
 
 def get_stars_text(score: float) -> str:
-    """
-    根据相关度分数生成星级文本
-    """
+    """根据相关度分数生成星级文本"""
     low = 6
     high = 8
     if score <= low:
@@ -48,18 +38,19 @@ def get_stars_text(score: float) -> str:
         return '⭐' * full_star_num + ('½' if half_star_num else '')
 
 
-def build_paper_card(paper: ArxivPaper, index: int) -> dict:
-    """
-    构建单篇论文的飞书卡片元素
+def build_paper_table_row(paper: ArxivPaper, index: int) -> str:
+    """构建表格行文本"""
+    # 截断标题
+    title = paper.title[:30] + "..." if len(paper.title) > 30 else paper.title
+    # 获取发布日期
+    pub_date = paper._paper.published.strftime('%Y-%m-%d') if paper._paper.published else 'N/A'
     
-    Args:
-        paper: 论文对象
-        index: 论文序号
-    
-    Returns:
-        飞书卡片元素字典
-    """
-    # 处理作者列表
+    return f"| {index} | {title} | {paper.arxiv_id} | {pub_date} | [PDF]({paper.pdf_url}) |"
+
+
+def build_paper_detail(paper: ArxivPaper, index: int) -> str:
+    """构建论文详细信息 Markdown"""
+    # 处理作者
     author_list = [a.name for a in paper.authors]
     if len(author_list) <= 5:
         authors = ', '.join(author_list)
@@ -68,140 +59,137 @@ def build_paper_card(paper: ArxivPaper, index: int) -> dict:
     
     # 处理机构
     if paper.affiliations is not None:
-        affiliations = paper.affiliations[:5]
-        affiliations_str = ', '.join(affiliations)
-        if len(paper.affiliations) > 5:
-            affiliations_str += ', ...'
+        affiliations = ', '.join(paper.affiliations[:3])
+        if len(paper.affiliations) > 3:
+            affiliations += ', ...'
     else:
-        affiliations_str = 'Unknown Affiliation'
+        affiliations = ''
     
-    # 相关度星级
+    # 相关度
     stars = get_stars_text(paper.score) if paper.score else ''
-    relevance_text = f"**Relevance:** {stars}" if stars else ""
     
-    # 构建链接文本（使用 markdown 链接代替按钮）
-    links = f"[📄 PDF]({paper.pdf_url})"
+    # 链接
+    links = f"[arXiv](https://arxiv.org/abs/{paper.arxiv_id}) | [PDF]({paper.pdf_url})"
     if paper.code_url:
-        links += f"  |  [💻 Code]({paper.code_url})"
+        links += f" | [Code]({paper.code_url})"
     
-    # 构建论文卡片元素
-    elements = [
-        {
-            "tag": "markdown",
-            "content": f"**{index}. {paper.title}**"
-        },
-        {
-            "tag": "markdown",
-            "content": f"👤 {authors}\n🏛️ *{affiliations_str}*"
-        }
-    ]
+    detail = f"**📝 {index}. {paper.title}**\n"
+    if stars:
+        detail += f"⭐ 相关度: {stars}\n"
+    detail += f"👤 {authors}\n"
+    if affiliations:
+        detail += f"🏛️ {affiliations}\n"
+    detail += f"🔗 {links}\n\n"
+    detail += f"**摘要**\n{paper.tldr}\n"
     
-    if relevance_text:
-        elements.append({
-            "tag": "markdown",
-            "content": relevance_text
-        })
-    
-    elements.append({
-        "tag": "markdown",
-        "content": f"📝 **TLDR:** {paper.tldr}"
-    })
-    
-    elements.append({
-        "tag": "markdown",
-        "content": f"🔗 arXiv: [{paper.arxiv_id}](https://arxiv.org/abs/{paper.arxiv_id})  |  {links}"
-    })
-    
-    elements.append({
-        "tag": "hr"
-    })
-    
-    return elements
+    return detail
 
 
-def build_empty_card() -> dict:
-    """
-    构建空结果的飞书卡片
-    """
-    return {
-        "msg_type": "interactive",
-        "card": {
-            "schema": "2.0",
-            "header": {
-                "title": {"tag": "plain_text", "content": "📚 Daily arXiv 推荐"},
-                "template": "blue"
-            },
-            "body": {
-                "elements": [
-                    {
-                        "tag": "markdown",
-                        "content": "**今日没有新论文，休息一下吧！** 🎉"
-                    }
-                ]
-            }
-        }
-    }
+def build_message_content(daily_papers: list[ArxivPaper], monthly_papers: list[ArxivPaper]) -> str:
+    """构建消息内容 Markdown"""
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    total = len(daily_papers) + len(monthly_papers)
+    
+    content = f"**ArXiv Today** 📚\n{today}\n\n"
+    content += f"今日找到了 **{total}** 篇相关论文\n\n"
+    
+    # 每日新论文表格
+    if daily_papers:
+        content += "---\n### 📅 今日最新\n\n"
+        content += "| 序号 | 论文标题 | arXiv ID | 日期 | 链接 |\n"
+        content += "|:---:|:---|:---|:---:|:---:|\n"
+        for i, paper in enumerate(daily_papers, 1):
+            content += build_paper_table_row(paper, i) + "\n"
+        content += "\n"
+    
+    # 月度论文表格
+    if monthly_papers:
+        content += "---\n### 📊 月度精选\n\n"
+        content += "| 序号 | 论文标题 | arXiv ID | 日期 | 链接 |\n"
+        content += "|:---:|:---|:---|:---:|:---:|\n"
+        for i, paper in enumerate(monthly_papers, 1):
+            content += build_paper_table_row(paper, i) + "\n"
+        content += "\n"
+    
+    return content
 
 
-def build_full_card(papers: list[ArxivPaper]) -> dict:
-    """
-    构建完整的飞书卡片消息
+def build_detail_content(papers: list[ArxivPaper], section_title: str) -> str:
+    """构建详细摘要内容"""
+    if not papers:
+        return ""
     
-    Args:
-        papers: 论文列表
+    content = f"---\n### {section_title}\n\n"
+    for i, paper in enumerate(tqdm(papers, desc=f'Building {section_title}'), 1):
+        content += build_paper_detail(paper, i) + "\n---\n"
+        time.sleep(5)  # 生成 TLDR 需要调用 LLM
     
-    Returns:
-        飞书卡片消息字典
-    """
-    import datetime
-    today = datetime.datetime.now().strftime('%Y/%m/%d')
-    
-    elements = [
-        {
-            "tag": "markdown",
-            "content": f"共推荐 **{len(papers)}** 篇论文，按相关度排序"
-        },
-        {
-            "tag": "hr"
-        }
-    ]
-    
-    for i, paper in enumerate(tqdm(papers, desc='Building Feishu Card'), 1):
-        paper_elements = build_paper_card(paper, i)
-        elements.extend(paper_elements)
-        time.sleep(10)  # 与原有邮件渲染保持一致的延迟
-    
-    return {
-        "msg_type": "interactive",
-        "card": {
-            "schema": "2.0",
-            "header": {
-                "title": {"tag": "plain_text", "content": f"📚 Daily arXiv 推荐 - {today}"},
-                "template": "blue"
-            },
-            "body": {
-                "elements": elements
-            }
-        }
-    }
+    return content
 
 
-def send_feishu_message(webhook_url: str, papers: list[ArxivPaper], secret: Optional[str] = None) -> bool:
+def send_feishu_message(
+    webhook_url: str, 
+    daily_papers: list[ArxivPaper], 
+    monthly_papers: list[ArxivPaper] = None,
+    secret: Optional[str] = None
+) -> bool:
     """
     发送消息到飞书群
     
     Args:
         webhook_url: 飞书自定义机器人 webhook 地址
-        papers: 论文列表
+        daily_papers: 每日新论文列表
+        monthly_papers: 月度论文列表
         secret: 签名密钥（可选）
     
     Returns:
         是否发送成功
     """
-    if len(papers) == 0:
-        message = build_empty_card()
+    if monthly_papers is None:
+        monthly_papers = []
+    
+    if len(daily_papers) == 0 and len(monthly_papers) == 0:
+        # 空消息
+        message = {
+            "msg_type": "interactive",
+            "card": {
+                "schema": "2.0",
+                "header": {
+                    "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+                    "template": "blue"
+                },
+                "body": {
+                    "elements": [
+                        {"tag": "markdown", "content": "**今日没有新论文，休息一下吧！** 🎉"}
+                    ]
+                }
+            }
+        }
     else:
-        message = build_full_card(papers)
+        # 构建表格概览
+        overview = build_message_content(daily_papers, monthly_papers)
+        
+        # 构建详细摘要
+        daily_details = build_detail_content(daily_papers, "📅 今日最新 - 详细摘要")
+        monthly_details = build_detail_content(monthly_papers, "📊 月度精选 - 详细摘要")
+        
+        full_content = overview + daily_details + monthly_details
+        
+        message = {
+            "msg_type": "interactive",
+            "card": {
+                "schema": "2.0",
+                "header": {
+                    "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+                    "template": "blue"
+                },
+                "body": {
+                    "elements": [
+                        {"tag": "markdown", "content": full_content}
+                    ]
+                }
+            }
+        }
     
     # 如果设置了签名密钥，添加签名
     if secret:
@@ -215,7 +203,7 @@ def send_feishu_message(webhook_url: str, papers: list[ArxivPaper], secret: Opti
             webhook_url,
             json=message,
             headers={"Content-Type": "application/json"},
-            timeout=30
+            timeout=60
         )
         result = response.json()
         
