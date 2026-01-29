@@ -79,23 +79,10 @@ def build_paper_card(paper: ArxivPaper, index: int) -> dict:
     stars = get_stars_text(paper.score) if paper.score else ''
     relevance_text = f"**Relevance:** {stars}" if stars else ""
     
-    # 构建按钮
-    buttons = [
-        {
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": "📄 PDF"},
-            "type": "primary",
-            "url": paper.pdf_url
-        }
-    ]
-    
+    # 构建链接文本（使用 markdown 链接代替按钮）
+    links = f"[📄 PDF]({paper.pdf_url})"
     if paper.code_url:
-        buttons.append({
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": "💻 Code"},
-            "type": "default",
-            "url": paper.code_url
-        })
+        links += f"  |  [💻 Code]({paper.code_url})"
     
     # 构建论文卡片元素
     elements = [
@@ -122,12 +109,7 @@ def build_paper_card(paper: ArxivPaper, index: int) -> dict:
     
     elements.append({
         "tag": "markdown",
-        "content": f"🔗 arXiv: [{paper.arxiv_id}](https://arxiv.org/abs/{paper.arxiv_id})"
-    })
-    
-    elements.append({
-        "tag": "action",
-        "actions": buttons
+        "content": f"🔗 arXiv: [{paper.arxiv_id}](https://arxiv.org/abs/{paper.arxiv_id})  |  {links}"
     })
     
     elements.append({
