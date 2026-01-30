@@ -119,96 +119,13 @@ def build_paper_detail_element(paper: ArxivPaper, index: int) -> list[dict]:
     return elements
 
 
-def send_feishu_message(
-    webhook_url: str, 
-    daily_papers: list[ArxivPaper], 
-    monthly_papers: list[ArxivPaper] = None,
-    secret: Optional[str] = None
-) -> bool:
-    """
-    发送消息到飞书群
-    """
-    if monthly_papers is None:
-        monthly_papers = []
+def _send_card_message(webhook_url: str, card: dict, secret: Optional[str] = None) -> bool:
+    """发送单条卡片消息到飞书"""
+    message = {
+        "msg_type": "interactive",
+        "card": card
+    }
     
-    total = len(daily_papers) + len(monthly_papers)
-    today = datetime.datetime.now().strftime('%Y-%m-%d')
-    
-    if total == 0:
-        # 空消息
-        message = {
-            "msg_type": "interactive",
-            "card": {
-                "schema": "2.0",
-                "header": {
-                    "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
-                    "subtitle": {"tag": "plain_text", "content": today},
-                    "template": "blue"
-                },
-                "body": {
-                    "elements": [
-                        {"tag": "markdown", "content": "**今日没有新论文，休息一下吧！** 🎉"}
-                    ]
-                }
-            }
-        }
-    else:
-        elements = []
-        
-        # 头部信息
-        elements.append({
-            "tag": "markdown", 
-            "content": f"ArXiv Today 小助手来啦٩(๑>◡<๑)۶！\n今日找到了 **{total}** 篇相关论文 ⁽⁽٩(๑˃̶͈̀ ᗨ ˂̶͈́)۶⁾⁾"
-        })
-        
-        # 每日论文表格
-        if daily_papers:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "### 📅 今日最新"})
-            table_elements = build_paper_table(daily_papers, start_index=1)
-            elements.extend(table_elements)
-        
-        # 月度论文表格
-        if monthly_papers:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "### 📊 月度精选"})
-            table_elements = build_paper_table(monthly_papers, start_index=1)
-            elements.extend(table_elements)
-        
-        # 每日论文详情
-        if daily_papers:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "## 📅 今日最新 - 详细摘要"})
-            for i, paper in enumerate(tqdm(daily_papers, desc='Building daily details'), 1):
-                detail_elements = build_paper_detail_element(paper, i)
-                elements.extend(detail_elements)
-                time.sleep(5)
-        
-        # 月度论文详情
-        if monthly_papers:
-            elements.append({"tag": "hr"})
-            elements.append({"tag": "markdown", "content": "## 📊 月度精选 - 详细摘要"})
-            for i, paper in enumerate(tqdm(monthly_papers, desc='Building monthly details'), 1):
-                detail_elements = build_paper_detail_element(paper, i)
-                elements.extend(detail_elements)
-                time.sleep(5)
-        
-        message = {
-            "msg_type": "interactive",
-            "card": {
-                "schema": "2.0",
-                "header": {
-                    "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
-                    "subtitle": {"tag": "plain_text", "content": today},
-                    "template": "blue"
-                },
-                "body": {
-                    "elements": elements
-                }
-            }
-        }
-    
-    # 如果设置了签名密钥，添加签名
     if secret:
         timestamp = int(time.time())
         sign = gen_sign(timestamp, secret)
@@ -225,7 +142,6 @@ def send_feishu_message(
         result = response.json()
         
         if result.get("code") == 0:
-            logger.success("飞书消息发送成功！")
             return True
         else:
             logger.error(f"飞书消息发送失败: {result}")
@@ -234,3 +150,155 @@ def send_feishu_message(
     except Exception as e:
         logger.error(f"飞书消息发送异常: {e}")
         return False
+
+
+def send_feishu_message(
+    webhook_url: str, 
+    daily_papers: list[ArxivPaper], 
+    monthly_papers: list[ArxivPaper] = None,
+    secret: Optional[str] = None
+) -> bool:
+    """
+    发送消息到飞书群
+    拆分成多条消息发送，避免元素数量超限
+    """
+    if monthly_papers is None:
+        monthly_papers = []
+    
+    total = len(daily_papers) + len(monthly_papers)
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    if total == 0:
+        # 空消息
+        card = {
+            "schema": "2.0",
+            "header": {
+                "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+                "subtitle": {"tag": "plain_text", "content": today},
+                "template": "blue"
+            },
+            "body": {
+                "elements": [
+                    {"tag": "markdown", "content": "**今日没有新论文，休息一下吧！** 🎉"}
+                ]
+            }
+        }
+        return _send_card_message(webhook_url, card, secret)
+    
+    success = True
+    
+    # === 第一条消息：概览和表格 ===
+    elements = []
+    
+    # 头部信息
+    elements.append({
+        "tag": "markdown", 
+        "content": f"ArXiv Today 小助手来啦٩(๑>◡<๑)۶！\n今日找到了 **{total}** 篇相关论文 ⁽⁽٩(๑˃̶͈̀ ᗨ ˂̶͈́)۶⁾⁾"
+    })
+    
+    # 每日论文表格
+    if daily_papers:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": "### 📅 今日最新"})
+        table_elements = build_paper_table(daily_papers, start_index=1)
+        elements.extend(table_elements)
+    
+    # 月度论文表格
+    if monthly_papers:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": "### 📊 月度精选"})
+        table_elements = build_paper_table(monthly_papers, start_index=1)
+        elements.extend(table_elements)
+    
+    card = {
+        "schema": "2.0",
+        "header": {
+            "title": {"tag": "plain_text", "content": "📚 ArXiv Today"},
+            "subtitle": {"tag": "plain_text", "content": today},
+            "template": "blue"
+        },
+        "body": {
+            "elements": elements
+        }
+    }
+    
+    if not _send_card_message(webhook_url, card, secret):
+        success = False
+    
+    time.sleep(1)  # 发送间隔，避免限流
+    
+    # === 后续消息：论文详情，每批最多 3 篇 ===
+    BATCH_SIZE = 5
+    
+    # 每日论文详情
+    if daily_papers:
+        for batch_start in range(0, len(daily_papers), BATCH_SIZE):
+            batch_papers = daily_papers[batch_start:batch_start + BATCH_SIZE]
+            batch_num = batch_start // BATCH_SIZE + 1
+            total_batches = (len(daily_papers) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            elements = [
+                {"tag": "markdown", "content": f"## 📅 今日最新 - 详细摘要 ({batch_num}/{total_batches})"}
+            ]
+            
+            for i, paper in enumerate(tqdm(batch_papers, desc=f'Building daily details batch {batch_num}')):
+                global_idx = batch_start + i + 1
+                detail_elements = build_paper_detail_element(paper, global_idx)
+                elements.extend(detail_elements)
+                time.sleep(5)  # 等待 LLM 生成
+            
+            card = {
+                "schema": "2.0",
+                "header": {
+                    "title": {"tag": "plain_text", "content": "📅 今日最新 - 详情"},
+                    "subtitle": {"tag": "plain_text", "content": f"{today} ({batch_num}/{total_batches})"},
+                    "template": "turquoise"
+                },
+                "body": {
+                    "elements": elements
+                }
+            }
+            
+            if not _send_card_message(webhook_url, card, secret):
+                success = False
+            
+            time.sleep(1)
+    
+    # 月度论文详情
+    if monthly_papers:
+        for batch_start in range(0, len(monthly_papers), BATCH_SIZE):
+            batch_papers = monthly_papers[batch_start:batch_start + BATCH_SIZE]
+            batch_num = batch_start // BATCH_SIZE + 1
+            total_batches = (len(monthly_papers) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            elements = [
+                {"tag": "markdown", "content": f"## 📊 月度精选 - 详细摘要 ({batch_num}/{total_batches})"}
+            ]
+            
+            for i, paper in enumerate(tqdm(batch_papers, desc=f'Building monthly details batch {batch_num}')):
+                global_idx = batch_start + i + 1
+                detail_elements = build_paper_detail_element(paper, global_idx)
+                elements.extend(detail_elements)
+                time.sleep(5)
+            
+            card = {
+                "schema": "2.0",
+                "header": {
+                    "title": {"tag": "plain_text", "content": "📊 月度精选 - 详情"},
+                    "subtitle": {"tag": "plain_text", "content": f"{today} ({batch_num}/{total_batches})"},
+                    "template": "purple"
+                },
+                "body": {
+                    "elements": elements
+                }
+            }
+            
+            if not _send_card_message(webhook_url, card, secret):
+                success = False
+            
+            time.sleep(1)
+    
+    if success:
+        logger.success("飞书消息发送成功！")
+    
+    return success
