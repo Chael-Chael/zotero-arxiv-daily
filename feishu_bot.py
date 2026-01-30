@@ -62,8 +62,15 @@ def build_paper_table(papers: list[ArxivPaper], start_index: int = 1) -> list[di
     for i, paper in enumerate(papers, start_index):
         # 截断标题
         title = paper.title[:35] + "..." if len(paper.title) > 35 else paper.title
-        # 获取发布日期
-        pub_date = paper._paper.published.strftime('%Y-%m-%d') if paper._paper.published else 'N/A'
+        # 从 arXiv ID 解析发布年月 (格式: YYMM.NNNNN)
+        try:
+            arxiv_id_prefix = paper.arxiv_id.split('.')[0]  # e.g., "2501"
+            year = 2000 + int(arxiv_id_prefix[:2])
+            month = int(arxiv_id_prefix[2:])
+            pub_date = f"{year}-{month:02d}"
+        except (ValueError, IndexError):
+            # 回退到 API 返回的日期
+            pub_date = paper._paper.published.strftime('%Y-%m-%d') if paper._paper.published else 'N/A'
         
         row = {
             "tag": "column_set",
@@ -107,13 +114,8 @@ def build_paper_detail_element(paper: ArxivPaper, index: int) -> list[dict]:
     elements.append({"tag": "markdown", "content": f"📎 arXiv ID: {paper.arxiv_id}"})
     elements.append({"tag": "markdown", "content": f"🔗 论文链接: {links}"})
     
-    # 摘要标题
+    # 中文摘要翻译
     elements.append({"tag": "markdown", "content": "**摘要**"})
-    
-    # 英文原文
-    elements.append({"tag": "markdown", "content": paper.summary})
-    
-    # 中文翻译
     elements.append({"tag": "markdown", "content": paper.tldr})
     
     return elements
@@ -237,9 +239,7 @@ def send_feishu_message(
             batch_num = batch_start // BATCH_SIZE + 1
             total_batches = (len(daily_papers) + BATCH_SIZE - 1) // BATCH_SIZE
             
-            elements = [
-                {"tag": "markdown", "content": f"## 📅 今日最新 - 详细摘要 ({batch_num}/{total_batches})"}
-            ]
+            elements = []
             
             for i, paper in enumerate(tqdm(batch_papers, desc=f'Building daily details batch {batch_num}')):
                 global_idx = batch_start + i + 1
@@ -271,9 +271,7 @@ def send_feishu_message(
             batch_num = batch_start // BATCH_SIZE + 1
             total_batches = (len(monthly_papers) + BATCH_SIZE - 1) // BATCH_SIZE
             
-            elements = [
-                {"tag": "markdown", "content": f"## 📊 月度精选 - 详细摘要 ({batch_num}/{total_batches})"}
-            ]
+            elements = []
             
             for i, paper in enumerate(tqdm(batch_papers, desc=f'Building monthly details batch {batch_num}')):
                 global_idx = batch_start + i + 1

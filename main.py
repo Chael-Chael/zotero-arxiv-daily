@@ -242,7 +242,7 @@ if __name__ == '__main__':
     
     # 获取月度论文
     logger.info("Retrieving monthly Arxiv papers...")
-    monthly_papers = get_arxiv_monthly_papers(args.arxiv_query, max_results=200)
+    monthly_papers = get_arxiv_monthly_papers(args.arxiv_query, max_results=2000)
     
     # 排序
     if len(daily_papers) > 0:
